@@ -1,6 +1,8 @@
 package raftService
 
-import "errors"
+import (
+	"errors"
+)
 
 type SystemState struct {
 	state    map[string]string
@@ -27,7 +29,64 @@ type Log struct {
 	lastCommittedEntry *LogEntry
 }
 
-func (log Log) commitIndex(index int) error {
+var (
+	IndexTooHighError = errors.New("The requested index is not in the system. Either it has been ingested into the snapshot or the current state is illegal.")
+	IndexTooLowError  = errors.New("The requested index is newer than the latest recorded index.")
+)
+
+func (log Log) getCommitIndex() int32 {
+	return log.lastEntry.index
+}
+
+func (log Log) getLastAppliedIndex() int32 {
+	return log.lastEntry.index
+}
+
+func (log Log) getCurrentTerm() int32 {
+	return log.lastEntry.term
+}
+
+func (log Log) get(index int32) (*LogEntry, error) {
+	currentEntry := log.lastEntry
+	for ; currentEntry.index > index; currentEntry = currentEntry.previousEntry {
+	}
+	if currentEntry.index > index {
+		return nil, IndexTooHighError
+	}
+	if currentEntry.index < index {
+		return nil, IndexTooLowError
+	}
+	return currentEntry, nil
+}
+
+func (log Log) applyEntries(firstEntry *LogEntry, entries *LogEntry) (bool, error) {
+	conflictLogEntry, err := log.get(firstEntry.index - 1)
+	if err != nil {
+		switch {
+		case errors.Is(err, IndexTooHighError):
+			if firstEntry.index == log.lastEntry.index+1 {
+				// Append the logs to the end of the chain
+				firstEntry.previousEntry = log.lastEntry
+				log.lastEntry = entries
+				return true, nil
+			} else {
+				// The leader needs to send an earlier index
+				return false, nil
+			}
+		default:
+			// This case should only occur if the startIndex has been incorperated into a snapshot
+			// but the snapshot should only contain committed indexes. Therefore, this is not a legal
+			// state and implies that a critical bug exists.
+			return false, errors.New("The start index has been incorperated into a snapshot. This is an illegal system state.")
+		}
+	}
+	// There were conflicting logs. The leader's logs should be taken as truth.
+	firstEntry.previousEntry = conflictLogEntry.previousEntry
+	log.lastEntry = entries
+	return true, nil
+}
+
+func (log Log) commitIndex(index int32) error {
 	for commitEntry := log.lastEntry; ; commitEntry = commitEntry.previousEntry {
 		if commitEntry.index == index {
 			log.lastCommittedEntry = commitEntry
@@ -40,14 +99,14 @@ func (log Log) commitIndex(index int) error {
 }
 
 type LogEntry struct {
-	term          int
-	index         int
+	term          int32
+	index         int32
 	data          string
 	previousEntry *LogEntry
 }
 
 type Snapshot struct {
-	lastTerm  int
-	lastIndex int
+	lastTerm  int32
+	lastIndex int32
 	state     map[string]string
 }
