@@ -12,7 +12,16 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
+type RaftMode int64
+
+const (
+	Leader RaftMode = iota
+	Follower
+	Candidate
+)
+
 type raftService struct {
+	mode RaftMode
 	proto.UnimplementedRaftServiceServer
 	*raftServerState
 	invokeHeartbeat func()
@@ -43,6 +52,10 @@ type raftServerState struct {
 // AppendEntries is invoked by the leader to replicate log entries.
 // Leader entries may be rejected if the leader is identified out outdated or indexes were skipped.
 func (follower raftService) AppendEntries(ctx context.Context, in *proto.AppendEntriesRequest) (*proto.AppendEntriesResponse, error) {
+	if follower.mode != Follower {
+		return &proto.AppendEntriesResponse{Term: follower.log.getCurrentTerm(), Success: false}, nil
+	}
+
 	// Whitepaper Section 5.1
 	// The leader term should always be equal or greater.
 	// If it isn't, this request must be from some outdated leader.
