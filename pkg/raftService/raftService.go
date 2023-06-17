@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
+	"time"
 
 	proto "github.com/m-haertling/raft-server/pkg/proto"
 	grpc "google.golang.org/grpc"
@@ -12,7 +14,8 @@ import (
 
 type raftService struct {
 	proto.UnimplementedRaftServiceServer
-	*raftServer
+	*raftServerState
+	invokeHeartbeat func()
 }
 
 type followerState struct {
@@ -29,7 +32,7 @@ type serverConfiguration struct {
 	port    string
 }
 
-type raftServer struct {
+type raftServerState struct {
 	id            int32
 	servers       []serverConfiguration
 	followerState followerState
@@ -57,6 +60,9 @@ func (follower raftService) AppendEntries(ctx context.Context, in *proto.AppendE
 	// Whitepaper Section 5.3
 	// Any index conflicts will take the leader's entries as truth.
 	// New entries are appended to the log.
+
+	// Invoke the heartbeat to reset the timer for leader election
+	follower.invokeHeartbeat()
 
 	// Generate a log chain
 	var firstEntry *LogEntry
@@ -89,7 +95,35 @@ func (server raftService) RequestVote(ctx context.Context, in *proto.RequestVote
 	return nil, nil
 }
 
-func main() {
+func (server raftService) activateElectionClock() {
+	// A random wait time helps minimize instances of deadlocked elections
+	seed := rand.NewSource(time.Now().UnixMicro())
+	randGen := rand.New(seed)
+	waitDuration := time.Duration(randGen.Intn(5)+5) * time.Second
+	// Start the timer
+	timer := time.NewTimer(waitDuration)
+	reset := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-timer.C:
+				server.runForElection()
+				return
+			case <-reset:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(waitDuration)
+			}
+		}
+	}()
+	// Set the heartbeat function
+	server.invokeHeartbeat = func() { reset <- true }
+}
+
+func (server raftService) start() {
+	server.activateElectionClock()
+
 	port := 2020
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
@@ -99,4 +133,12 @@ func main() {
 	grpcServer := grpc.NewServer(opts...)
 	proto.RegisterRaftServiceServer(grpcServer, raftService{})
 	grpcServer.Serve(listener)
+}
+
+func (server raftService) runForElection() {
+
+}
+
+func (server raftService) revertToFollower() {
+
 }
