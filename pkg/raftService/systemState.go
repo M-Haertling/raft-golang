@@ -30,8 +30,8 @@ type Log struct {
 }
 
 var (
-	IndexTooHighError = errors.New("The requested index is not in the system. Either it has been ingested into the snapshot or the current state is illegal.")
-	IndexTooLowError  = errors.New("The requested index is newer than the latest recorded index.")
+	ErrIndexTooHigh = errors.New("the requested index is not in the system (either it has been ingested into the snapshot or the current state is illegal)")
+	ErrIndexTooLow  = errors.New("the requested index is newer than the latest recorded index")
 )
 
 func (log Log) getCommitIndex() int32 {
@@ -51,10 +51,10 @@ func (log Log) get(index int32) (*LogEntry, error) {
 	for ; currentEntry.index > index; currentEntry = currentEntry.previousEntry {
 	}
 	if currentEntry.index > index {
-		return nil, IndexTooHighError
+		return nil, ErrIndexTooHigh
 	}
 	if currentEntry.index < index {
-		return nil, IndexTooLowError
+		return nil, ErrIndexTooLow
 	}
 	return currentEntry, nil
 }
@@ -63,7 +63,7 @@ func (log Log) applyEntries(firstEntry *LogEntry, entries *LogEntry) (bool, erro
 	conflictLogEntry, err := log.get(firstEntry.index - 1)
 	if err != nil {
 		switch {
-		case errors.Is(err, IndexTooHighError):
+		case errors.Is(err, ErrIndexTooHigh):
 			if firstEntry.index == log.lastEntry.index+1 {
 				// Append the logs to the end of the chain
 				firstEntry.previousEntry = log.lastEntry
@@ -93,7 +93,7 @@ func (log Log) commitIndex(index int32) error {
 			return nil
 		}
 		if commitEntry.previousEntry == nil || commitEntry.index < index {
-			return errors.New("Index not found")
+			return errors.New("index not found")
 		}
 	}
 }
