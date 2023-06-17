@@ -91,8 +91,15 @@ func (follower raftService) AppendEntries(ctx context.Context, in *proto.AppendE
 	return &proto.AppendEntriesResponse{Term: follower.log.getCurrentTerm(), Success: success}, nil
 }
 
+// RequestVote is invoked by election candidates to gather votes
 func (server raftService) RequestVote(ctx context.Context, in *proto.RequestVoteRequest) (*proto.RequestVoteResponse, error) {
-	return nil, nil
+	// Rejection scenarios
+	if server.log.getCurrentTerm() > in.Term || // The requestor is on an old term - Section 5.1
+		server.followerState.votedFor != 0 || // This server has already cast a vote - Section 5.2, 5.4
+		server.log.getLastAppliedIndex() > in.LastLogIndex { // This server is ahead in log entries over the requestor  - Section 5.2, 5.4
+		return &proto.RequestVoteResponse{Term: server.log.getCurrentTerm(), VoteGranted: false}, nil
+	}
+	return &proto.RequestVoteResponse{Term: server.log.getCurrentTerm(), VoteGranted: true}, nil
 }
 
 func (server raftService) activateElectionClock() {
