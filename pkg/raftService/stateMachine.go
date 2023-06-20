@@ -9,23 +9,22 @@ import (
 )
 
 type StateMachine struct {
-	state    map[string]string
-	commands map[string]Command
+	state map[string]string
 }
 
 type Command struct {
 	name        string
 	description string
-	execute     func(state StateMachine, args ...string) (output string, err error)
+	execute     func(commands map[string]Command, state StateMachine, args ...string) (output string, err error)
 }
 
 var Commands = map[string]Command{
 	"help": {
 		name:        "help",
 		description: "Provides help for supported commands.",
-		execute: func(state StateMachine, args ...string) (string, error) {
+		execute: func(commands map[string]Command, state StateMachine, args ...string) (string, error) {
 			commandName := args[0]
-			if command, ok := state.commands[commandName]; ok {
+			if command, ok := commands[commandName]; ok {
 				return command.description, nil
 			}
 			return "", errors.New("command not found")
@@ -39,7 +38,7 @@ var Commands = map[string]Command{
 			"\t0 - The target key",
 			"\t1 - The value to store",
 		}, "\n"),
-		execute: func(state StateMachine, args ...string) (string, error) {
+		execute: func(commands map[string]Command, state StateMachine, args ...string) (string, error) {
 			if len(args) != 2 {
 				return "", errors.New("there must be exactly two arguments")
 			}
@@ -56,7 +55,7 @@ var Commands = map[string]Command{
 			"Arguments:",
 			"\t0 - The target key",
 		}, "\n"),
-		execute: func(state StateMachine, args ...string) (string, error) {
+		execute: func(commands map[string]Command, state StateMachine, args ...string) (string, error) {
 			if len(args) != 1 {
 				return "", errors.New("there must be exactly one argument")
 			}
@@ -77,7 +76,7 @@ var Commands = map[string]Command{
 			"\t0 - The target key (must contain a valid JSON array)",
 			"\t1 - The string value to append to the array",
 		}, "\n"),
-		execute: func(state StateMachine, args ...string) (string, error) {
+		execute: func(commands map[string]Command, state StateMachine, args ...string) (string, error) {
 			if len(args) != 2 {
 				return "", errors.New("there must be exactly two arguments")
 			}
@@ -125,7 +124,7 @@ var Commands = map[string]Command{
 			"\t0 - The target key (must point to a number)",
 			"\t1 - The amount to add to the value",
 		}, "\n"),
-		execute: func(state StateMachine, args ...string) (string, error) {
+		execute: func(commands map[string]Command, state StateMachine, args ...string) (string, error) {
 			if len(args) != 2 {
 				return "", errors.New("there must be exactly two arguments")
 			}
@@ -141,7 +140,7 @@ var Commands = map[string]Command{
 					if curAmt, err := strconv.ParseFloat(curAmtStr, 64); err != nil {
 						return "", err
 					} else {
-						newAmt := strconv.FormatFloat(curAmt+incAmt, 'E', -1, 64)
+						newAmt := strconv.FormatFloat(curAmt+incAmt, 'G', -1, 64)
 						state.state[key] = newAmt
 						return fmt.Sprintf("Success - new value set to %s", newAmt), nil
 					}
@@ -154,8 +153,8 @@ var Commands = map[string]Command{
 
 func (state StateMachine) executeCommand(command string) (string, error) {
 	tokens := strings.Split(command, " ")
-	if command, ok := state.commands[tokens[0]]; ok {
-		return command.execute(state, tokens[1:]...)
+	if command, ok := Commands[tokens[0]]; ok {
+		return command.execute(Commands, state, tokens[1:]...)
 	}
 	return "", errors.New("operation not recognized")
 }
